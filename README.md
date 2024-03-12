@@ -16,7 +16,7 @@ should probably proofread and complete it, then remove this comment. -->
 
 # finetuned-dermnet
 
-This model is a fine-tuned version of [google/vit-base-patch16-224-in21k](https://huggingface.co/google/vit-base-patch16-224-in21k) on the indian_food_images dataset.
+This model is a fine-tuned version of [google/vit-base-patch16-224-in21k](https://huggingface.co/google/vit-base-patch16-224-in21k) on the dermnet-images dataset.
 It achieves the following results on the evaluation set:
 - Loss: 1.1935
 - Accuracy: 0.7099

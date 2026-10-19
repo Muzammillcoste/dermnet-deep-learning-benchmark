@@ -3,51 +3,193 @@ license: apache-2.0
 base_model: google/vit-base-patch16-224-in21k
 tags:
 - image-classification
+- vision-transformer
+- dermatology
+- medical-imaging
 - generated_from_trainer
 metrics:
 - accuracy
 model-index:
 - name: finetuned-dermnet
-  results: []
+  results:
+  - task:
+      type: image-classification
+      name: Image Classification
+    dataset:
+      name: DermNet (23 classes)
+      type: imagefolder
+    metrics:
+    - type: accuracy
+      value: 0.7099
+      name: Validation accuracy
+    - type: loss
+      value: 1.1935
+      name: Validation loss
 ---
 
-<!-- This model card has been generated automatically according to the information the Trainer had access to. You
-should probably proofread and complete it, then remove this comment. -->
+# finetuned-dermnet: Skin Disease Image Classifier (ViT)
 
-# finetuned-dermnet
+A Vision Transformer (ViT-Base/16) fine-tuned to sort photos of skin conditions into **23 broad disease categories** from the DermNet image collection.
 
-This model is a fine-tuned version of [google/vit-base-patch16-224-in21k](https://huggingface.co/google/vit-base-patch16-224-in21k) on the dermnet-images dataset.
-It achieves the following results on the evaluation set:
-- Loss: 1.1935
-- Accuracy: 0.7099
+**Validation accuracy: 71.0%** across 23 classes (random guessing gets 4.3%).
 
-## Model description
+> [!WARNING]
+> **This is not a medical device and must not be used for diagnosis.**
+> It is a research and teaching model. It gets about 3 in 10 images wrong, it was never tested in a clinic, and it can be confidently wrong. If you are worried about your skin, see a doctor or dermatologist.
 
-More information needed
+---
 
-## Intended uses & limitations
+## Contents
 
-More information needed
+- [In plain words](#in-plain-words) (for everyone)
+- [Quick start](#quick-start) (for developers)
+- [The 23 categories](#the-23-categories)
+- [Results](#results)
+- [Model and training details](#model-and-training-details) (for researchers)
+- [Limitations and responsible use](#limitations-and-responsible-use)
+- [Repository files](#repository-files)
+- [Citation and license](#citation-and-license)
 
-## Training and evaluation data
+---
 
-More information needed
+## In plain words
 
-## Training procedure
+**What it does:** you give it a photo of a skin problem, and it guesses which of 23 groups the condition belongs to, for example *"Eczema"*, *"Acne and Rosacea"*, or *"Melanoma, Nevi and Moles"*. It also says how sure it is about each guess.
 
-### Training hyperparameters
+**How good is it?** On 2,334 photos it had never trained on, its top guess was right **71% of the time**. That is useful for a student project or a demo. It is **not good enough** to make medical decisions.
 
-The following hyperparameters were used during training:
-- learning_rate: 0.0002
-- train_batch_size: 16
-- eval_batch_size: 8
-- seed: 42
-- optimizer: Adam with betas=(0.9,0.999) and epsilon=1e-08
-- lr_scheduler_type: linear
-- num_epochs: 10
-- mixed_precision_training: Native AMP
+**What it can't do:**
+- Name a specific disease. Each category is a broad family of conditions.
+- Say whether something is dangerous, or tell you what to do about it.
+- Handle photos that don't look like the training photos, such as blurry or dim phone pictures, unusual angles, or skin tones that were rare in the training data.
+- Say "this is healthy skin". Every image gets put into one of the 23 disease groups.
 
-### Training results
+---
+
+## Quick start
+
+### 1. Get the model
+
+The weights file (`model.safetensors`, ~343 MB) is stored with **Git LFS**. Install Git LFS before you clone, or you will only get a small text pointer instead of the real file.
+
+```bash
+git lfs install
+git clone https://github.com/Muzammillcoste/dermnet-deep-learning-benchmark.git
+cd dermnet-deep-learning-benchmark
+```
+
+### 2. Install dependencies
+
+```bash
+pip install "transformers>=4.38" torch pillow
+```
+
+### 3. Classify an image
+
+**Easiest way (pipeline):**
+
+```python
+from transformers import pipeline
+
+classifier = pipeline("image-classification", model="./")  # path to this folder
+results = classifier("my_skin_photo.jpg", top_k=5)
+
+for r in results:
+    print(f"{r['score']:.1%}  {r['label']}")
+```
+
+Example output format (the numbers are illustrative):
+
+```
+62.4%  Eczema Photos
+14.1%  Atopic Dermatitis Photos
+ 7.9%  Psoriasis pictures Lichen Planus and related diseases
+ ...
+```
+
+**Lower-level way (for batching or your own code):**
+
+```python
+import torch
+from PIL import Image
+from transformers import AutoImageProcessor, AutoModelForImageClassification
+
+model_dir = "./"
+processor = AutoImageProcessor.from_pretrained(model_dir)
+model = AutoModelForImageClassification.from_pretrained(model_dir).eval()
+
+image = Image.open("my_skin_photo.jpg").convert("RGB")
+inputs = processor(images=image, return_tensors="pt")
+
+with torch.no_grad():
+    probs = model(**inputs).logits.softmax(dim=-1)[0]
+
+top5 = probs.topk(5)
+for score, idx in zip(top5.values, top5.indices):
+    print(f"{score:.1%}  {model.config.id2label[idx.item()]}")
+```
+
+**Tips**
+- Show the **top 3 to 5** predictions, not only the first one. Many categories look alike.
+- Treat the scores as a ranking. They are not calibrated probabilities.
+- Runs fine on CPU, about 86M parameters per forward pass. A GPU helps for large batches.
+
+---
+
+## The 23 categories
+
+| ID | Category | ID | Category |
+|---:|---|---:|---|
+| 0 | Acne and Rosacea | 12 | Nail Fungus and other Nail Disease |
+| 1 | Actinic Keratosis, Basal Cell Carcinoma and other Malignant Lesions | 13 | Poison Ivy and other Contact Dermatitis |
+| 2 | Atopic Dermatitis | 14 | Psoriasis, Lichen Planus and related diseases |
+| 3 | Bullous Disease | 15 | Scabies, Lyme Disease and other Infestations and Bites |
+| 4 | Cellulitis, Impetigo and other Bacterial Infections | 16 | Seborrheic Keratoses and other Benign Tumors |
+| 5 | Eczema | 17 | Systemic Disease |
+| 6 | Exanthems and Drug Eruptions | 18 | Tinea, Ringworm, Candidiasis and other Fungal Infections |
+| 7 | Hair Loss, Alopecia and other Hair Diseases | 19 | Urticaria (Hives) |
+| 8 | Herpes, HPV and other STDs | 20 | Vascular Tumors |
+| 9 | Light Diseases and Disorders of Pigmentation | 21 | Vasculitis |
+| 10 | Lupus and other Connective Tissue diseases | 22 | Warts, Molluscum and other Viral Infections |
+| 11 | Melanoma Skin Cancer, Nevi and Moles | | |
+
+The model returns the exact strings stored in [config.json](config.json) under `id2label`, for example `"Eczema Photos"` or `"Urticaria Hives"`. The table above cleans those names up for reading.
+
+---
+
+## Results
+
+### Headline numbers
+
+| Metric | Value |
+|---|---|
+| Validation accuracy (top-1) | **0.7099** (1,657 / 2,334 correct) |
+| Validation loss (cross-entropy) | 1.1935 |
+| Chance level (uniform, 23 classes) | 0.0435 |
+| Final training loss (mean over run) | 0.532 |
+| Best checkpoint | step 7,300 (epoch 8.83), selected by **lowest validation loss** |
+
+The highest accuracy seen during training was 0.7112 at step 8,100. The saved model is the step-7,300 checkpoint because checkpoints were ranked by validation loss, not accuracy.
+
+### Learning curve (end of each epoch)
+
+| Epoch | Mean train loss | Val loss | Val accuracy |
+|:---:|:---:|:---:|:---:|
+| 1 | 1.099 | 1.446 | 0.574 |
+| 2 | 0.816 | 1.451 | 0.589 |
+| 3 | 0.608 | 1.472 | 0.601 |
+| 4 | 0.518 | 1.402 | 0.626 |
+| 5 | 0.605 | 1.242 | 0.665 |
+| 6 | 0.485 | 1.304 | 0.658 |
+| 7 | 0.385 | 1.284 | 0.679 |
+| 8 | 0.325 | 1.265 | 0.696 |
+| 9 | 0.263 | 1.203 | 0.704 |
+| 10 | 0.220 | 1.200 | 0.711 |
+
+Training loss drops much faster than validation loss, ending around 0.2 versus 1.2, which shows clear **overfitting**. Validation accuracy was still climbing slowly at epoch 10.
+
+<details>
+<summary>Full evaluation log (every 100 steps)</summary>
 
 | Training Loss | Epoch | Step | Validation Loss | Accuracy |
 |:-------------:|:-----:|:----:|:---------------:|:--------:|
@@ -134,10 +276,117 @@ The following hyperparameters were used during training:
 | 0.0899        | 9.79  | 8100 | 1.2022          | 0.7112   |
 | 0.2154        | 9.92  | 8200 | 1.1999          | 0.7108   |
 
+</details>
 
-### Framework versions
+You can view the full curves with TensorBoard:
 
-- Transformers 4.38.1
-- Pytorch 2.1.2
-- Datasets 2.1.0
-- Tokenizers 0.15.2
+```bash
+pip install tensorboard
+tensorboard --logdir runs/
+```
+
+---
+
+## Model and training details
+
+### Architecture
+
+| | |
+|---|---|
+| Base model | [`google/vit-base-patch16-224-in21k`](https://huggingface.co/google/vit-base-patch16-224-in21k), pre-trained on ImageNet-21k |
+| Type | `ViTForImageClassification` (12 layers, 12 heads, hidden size 768, about 86M parameters) |
+| Head | Linear classifier on the `[CLS]` token, 23 outputs, softmax / cross-entropy |
+| Input | 224 × 224 RGB, 16 × 16 patches (196 tokens + `[CLS]`) |
+| Preprocessing | Resize to 224 × 224 (bilinear), scale to [0, 1], normalize with mean = std = 0.5 per channel |
+| Precision | Weights stored as float32 (`model.safetensors`) |
+
+### Data
+
+- **Source:** the DermNet image collection, in the 23-category folder layout used by the public Kaggle "Dermnet" dataset. The label names match those folder names.
+- **Split:** the logs show **2,334 validation images** and about **13.2k training images**, roughly an 85/15 split. The split script and seed are not in this repo.
+- **Note on evaluation:** the validation set was also used to pick the best checkpoint. The reported 71.0% is therefore slightly optimistic. Scores on a separate held-out test set have not been reported.
+
+### Hyperparameters
+
+| Setting | Value |
+|---|---|
+| Learning rate | 2e-4, linear decay, no warmup |
+| Optimizer | Adam (β₁ = 0.9, β₂ = 0.999, ε = 1e-8) |
+| Batch size | 16 train / 8 eval |
+| Epochs | 10 (8,270 steps) |
+| Mixed precision | Native AMP (fp16) |
+| Seed | 42 |
+| Eval / save interval | every 100 steps |
+| Model selection | lowest validation loss (`load_best_model_at_end`) |
+
+### Compute
+
+- About 1 h 44 min of training (6,220 s), around 21 images/s, on a single GPU.
+- Evaluation takes about 33 s for 2,334 images, around 70 images/s.
+
+### Reproducibility notes
+
+- At step 10 the training loss was already about 1.23, far below the ≈3.1 (ln 23) you would expect from a freshly initialized head. This, together with several run folders under `runs/`, suggests the run **continued from an earlier fine-tuning session**. The hyperparameters above describe the final session only.
+- Framework versions: Transformers 4.38.1, PyTorch 2.1.2, Datasets 2.1.0, Tokenizers 0.15.2.
+
+---
+
+## Limitations and responsible use
+
+**Intended uses**
+- Teaching and coursework on transfer learning and vision transformers
+- A baseline for comparing other dermatology classifiers
+- Research prototypes, always with a human expert in the loop
+
+**Out-of-scope uses**
+- Diagnosing, triaging or screening real patients
+- Any app that tells the public what condition they have
+- Deciding whether a lesion is cancer
+
+**Known limitations**
+- **About 29% error rate.** Some errors may be dangerous, for example a malignant lesion classified as benign.
+- **Overlapping categories.** Several classes are clinically close, such as Eczema vs. Atopic Dermatitis, or Psoriasis vs. Lichen Planus. Expect confusion between them.
+- **Dataset bias.** DermNet is an atlas of mostly clinical photos. Lighter skin tones are believed to be over-represented, and per-skin-tone performance has not been measured. Results on darker skin, phone photos or dermoscopy images may be much worse.
+- **Closed set.** No "normal skin" or "unknown" class exists. Every input is forced into one of the 23 categories, including photos that are not skin at all.
+- **Uncalibrated confidence.** A high score does not mean the prediction is reliable.
+- **Missing analysis.** Per-class metrics, a confusion matrix and a test-set evaluation have not been computed yet. These are good next steps.
+
+---
+
+## Repository files
+
+| File | What it is |
+|---|---|
+| `model.safetensors` | Trained weights (Git LFS, ~343 MB) |
+| `config.json` | Model architecture and the `id2label` / `label2id` maps |
+| `preprocessor_config.json` | Image resize and normalization settings |
+| `training_args.bin` | Pickled `TrainingArguments` from the Hugging Face `Trainer` |
+| `trainer_state.json` | Full training and evaluation log history |
+| `all_results.json`, `train_results.json`, `eval_results.json` | Final summary metrics |
+| `runs/` | TensorBoard event files |
+
+---
+
+## Citation and license
+
+Released under the **Apache 2.0** license, the same license as the base ViT model. The DermNet images belong to their original copyright holders. Check DermNet's terms before you reuse the images.
+
+If you use this model, please cite:
+
+```bibtex
+@misc{finetuned_dermnet,
+  title  = {finetuned-dermnet: ViT-Base/16 fine-tuned on DermNet (23 classes)},
+  author = {Muzammil},
+  year   = {2024},
+  url    = {https://github.com/Muzammillcoste/dermnet-deep-learning-benchmark}
+}
+
+@inproceedings{dosovitskiy2021vit,
+  title     = {An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale},
+  author    = {Dosovitskiy, Alexey and others},
+  booktitle = {ICLR},
+  year      = {2021}
+}
+```
+
+**Acknowledgments:** Google Research for ViT, Hugging Face for `transformers`, and DermNet for the image collection.
